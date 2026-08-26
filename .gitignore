@@ -1,0 +1,8 @@
+# Este repositorio solo publica metadata y la imagen de estado.
+*.log
+*.tmp
+__pycache__/
+.env
+.env.*
+*credentials*.json
+*service-account*.json

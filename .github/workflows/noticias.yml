@@ -1,0 +1,169 @@
+name: Colector de noticias
+
+# Cada 3 horas al minuto 23, hora de Bolivia.
+on:
+  schedule:
+    - cron: '23 */3 * * *'
+      timezone: "America/La_Paz"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: colector-noticias
+  cancel-in-progress: false
+
+jobs:
+  recolectar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Descargar repositorio publico
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Descargar el motor privado
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          repository: ${{ secrets.DEV_VAULT_REPOSITORY }}
+          ref: main
+          ssh-key: ${{ secrets.DEV_VAULT_DEPLOY_KEY }}
+          path: private
+          sparse-checkout: |
+            ${{ secrets.DEV_VAULT_CORE_PATH }}
+          sparse-checkout-cone-mode: true
+          persist-credentials: true
+
+      - name: Configurar Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.13'
+
+      - name: Validar configuracion privada
+        shell: bash
+        env:
+          CORE_PATH: ${{ secrets.DEV_VAULT_CORE_PATH }}
+        run: |
+          set -euo pipefail
+          test -n "$CORE_PATH"
+          case "$CORE_PATH" in
+            /*|*..*) echo "Ruta privada no valida" >&2; exit 1 ;;
+          esac
+          test -f "private/$CORE_PATH/codigo/collector.py"
+          test -f "private/$CORE_PATH/codigo/ejecutar.py"
+
+      - name: Instalar dependencias
+        shell: bash
+        env:
+          CORE_PATH: ${{ secrets.DEV_VAULT_CORE_PATH }}
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet -r "private/$CORE_PATH/requirements.txt"
+
+      - name: Preparar Chrome para El Diario
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m playwright install --with-deps chrome
+
+      - name: Ejecutar la corrida
+        id: ejecutar
+        continue-on-error: true
+        shell: bash
+        env:
+          CORE_PATH: ${{ secrets.DEV_VAULT_CORE_PATH }}
+          UPLOAD_DATA: ${{ secrets.UPLOAD_DATA }}
+          UPLOAD_SECRET: ${{ secrets.UPLOAD_SECRET }}
+        run: |
+          set -euo pipefail
+          python "private/$CORE_PATH/codigo/ejecutar.py"
+
+      - name: Verificar las salidas publicas
+        if: steps.ejecutar.outcome == 'success'
+        shell: bash
+        env:
+          CORE_PATH: ${{ secrets.DEV_VAULT_CORE_PATH }}
+        run: |
+          set -euo pipefail
+          PUB="private/$CORE_PATH/publico"
+          test -s "$PUB/noticias_ultimos_7_dias_publico.csv"
+          test -s "$PUB/estado_ultima_corrida.png"
+
+          # Ultima barrera: columnas exactas y sin cuerpos.
+          python "private/$CORE_PATH/codigo/verificar_publico.py"             "$PUB/noticias_ultimos_7_dias_publico.csv"
+
+      - name: Guardar en el vault privado
+        if: steps.ejecutar.outcome == 'success'
+        shell: bash
+        env:
+          CORE_PATH: ${{ secrets.DEV_VAULT_CORE_PATH }}
+        run: |
+          set -euo pipefail
+          # monitoreo/ es operativo y se regenera: no se versiona.
+          git -C private add -- "$CORE_PATH/publico"
+          if git -C private diff --cached --quiet; then
+            echo "El vault ya esta al dia."
+            exit 0
+          fi
+          git -C private config user.name "Daniel Bohoz Oros Trujillo"
+          git -C private config user.email "283808960+BohozX@users.noreply.github.com"
+          git -C private commit -m "IDI-Core: actualizacion automatica"
+          for intento in 1 2 3; do
+            git -C private pull --rebase origin main
+            if git -C private push origin HEAD:main; then
+              exit 0
+            fi
+            if [ "$intento" -eq 3 ]; then
+              echo "No se pudo sincronizar Dev-Vault tras 3 intentos." >&2
+              exit 1
+            fi
+            sleep $((intento * 2))
+          done
+
+      - name: Publicar metadata y estado
+        if: steps.ejecutar.outcome == 'success'
+        shell: bash
+        env:
+          CORE_PATH: ${{ secrets.DEV_VAULT_CORE_PATH }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PUB="private/$CORE_PATH/publico"
+          cp "$PUB/noticias_ultimos_7_dias_publico.csv" .
+          cp "$PUB/estado_ultima_corrida.png" .
+
+          # Solo estos dos ficheros pueden entrar al repo publico.
+          if [ -n "$(git status --porcelain | grep -v -E 'noticias_ultimos_7_dias_publico.csv|estado_ultima_corrida.png' || true)" ]; then
+            echo "Hay cambios inesperados fuera de las salidas autorizadas." >&2
+            git status --porcelain >&2
+            exit 1
+          fi
+
+          if [ -z "$(git status --porcelain noticias_ultimos_7_dias_publico.csv estado_ultima_corrida.png)" ]; then
+            echo "Sin cambios publicos."
+            exit 0
+          fi
+
+          git config user.name "Daniel Bohoz Oros Trujillo"
+          git config user.email "283808960+BohozX@users.noreply.github.com"
+          git add noticias_ultimos_7_dias_publico.csv estado_ultima_corrida.png
+          git commit -m "Update news snapshot $(TZ=America/La_Paz date '+%Y-%m-%d %H:%M') BOT"
+          REMOTO="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          for intento in 1 2 3; do
+            git pull --rebase "$REMOTO" main
+            if git push "$REMOTO" HEAD:main; then
+              exit 0
+            fi
+            if [ "$intento" -eq 3 ]; then
+              echo "No se pudo publicar tras 3 intentos." >&2
+              exit 1
+            fi
+            sleep $((intento * 2))
+          done
+
+      - name: Propagar el fallo
+        if: steps.ejecutar.outcome == 'failure'
+        run: exit 1
