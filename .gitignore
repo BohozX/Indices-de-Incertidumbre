@@ -6,3 +6,7 @@ __pycache__/
 .env.*
 *credentials*.json
 *service-account*.json
+
+# El motor privado se descarga aqui durante la corrida. Ignorarlo hace
+# imposible que el codigo privado acabe publicado por descuido.
+private/
