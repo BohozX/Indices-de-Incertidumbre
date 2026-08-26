@@ -7,7 +7,7 @@ medios bolivianos y actualiza aquí dos archivos:
 
 | Archivo | Contenido |
 |---|---|
-| `noticias_ultimos_7_dias_publico.csv` | Metadata de los últimos 7 días: `article_id, fuente, fecha, hora, titulo, url` |
+| `noticias_ultimos_7_dias_publico.csv` | Metadata de los últimos 7 días: `fuente, fecha, hora, titulo, url` |
 | `estado_ultima_corrida.png` | Estado de la última ejecución: cobertura, duración y resultado por fuente |
 
 ## Medios
