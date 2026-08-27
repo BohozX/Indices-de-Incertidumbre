@@ -106,12 +106,13 @@ jobs:
           set -euo pipefail
           git -C private add -- "$CORE_PATH/publico" "$CORE_PATH/registro"
 
-          # Si algo queda sin preparar, saberlo: el rebase posterior
-          # falla por ello y a ciegas no se puede corregir.
-          PENDIENTE="$(git -C private status --porcelain)"
-          if [ -n "$PENDIENTE" ]; then
-            echo "Sin preparar tras el add:"
-            echo "$PENDIENTE"
+          # Solo lo REALMENTE sin preparar: git status --porcelain marca
+          # tambien lo ya preparado y daria una falsa alarma. El rebase
+          # posterior se cae justo por esto, asi que conviene verlo.
+          SUELTO="$(git -C private diff --name-only)"
+          if [ -n "$SUELTO" ]; then
+            echo "Modificado y sin preparar:"
+            echo "$SUELTO"
           fi
 
           if git -C private diff --cached --quiet; then
