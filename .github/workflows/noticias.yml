@@ -96,14 +96,24 @@ jobs:
           python "private/$CORE_PATH/codigo/verificar_publico.py"             "$PUB/noticias_ultimos_7_dias_publico.csv"
 
       - name: Guardar en el vault privado
-        if: steps.ejecutar.outcome == 'success'
+        # Siempre, incluso si la corrida fallo: el registro de la ultima
+        # corrida es justo lo que hace falta cuando algo va mal.
+        if: always()
         shell: bash
         env:
           CORE_PATH: ${{ secrets.DEV_VAULT_CORE_PATH }}
         run: |
           set -euo pipefail
-          # monitoreo/ es operativo y se regenera: no se versiona.
-          git -C private add -- "$CORE_PATH/publico"
+          git -C private add -- "$CORE_PATH/publico" "$CORE_PATH/registro"
+
+          # Si algo queda sin preparar, saberlo: el rebase posterior
+          # falla por ello y a ciegas no se puede corregir.
+          PENDIENTE="$(git -C private status --porcelain)"
+          if [ -n "$PENDIENTE" ]; then
+            echo "Sin preparar tras el add:"
+            echo "$PENDIENTE"
+          fi
+
           if git -C private diff --cached --quiet; then
             echo "El vault ya esta al dia."
             exit 0
@@ -112,7 +122,7 @@ jobs:
           git -C private config user.email "283808960+BohozX@users.noreply.github.com"
           git -C private commit -m "IDI-Core: actualizacion automatica"
           for intento in 1 2 3; do
-            git -C private pull --rebase origin main
+            git -C private pull --rebase --autostash origin main
             if git -C private push origin HEAD:main; then
               exit 0
             fi
@@ -153,7 +163,7 @@ jobs:
           git commit -m "Update news snapshot $(TZ=America/La_Paz date '+%Y-%m-%d %H:%M') BOT"
           REMOTO="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           for intento in 1 2 3; do
-            git pull --rebase "$REMOTO" main
+            git pull --rebase --autostash "$REMOTO" main
             if git push "$REMOTO" HEAD:main; then
               exit 0
             fi
