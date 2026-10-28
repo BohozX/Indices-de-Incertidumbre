@@ -5,6 +5,7 @@ La Razón, Los Tiempos, ANF, Visión 360, Opinión, ERBOL y El Diario, recogida
 automáticamente cada tres horas.
 
 Se publican los titulares de los últimos siete días con su medio, fecha, hora y
-enlace, junto a una imagen con el estado de la última corrida. No se reproduce
+enlace, junto a una imagen con el estado de la última corrida y un resumen
+con el número de noticias registradas por día y por medio. No se reproduce
 el cuerpo de las noticias, que pertenece a cada medio: para leer una nota hay
 que seguir su enlace original.
