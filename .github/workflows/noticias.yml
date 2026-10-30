@@ -100,7 +100,7 @@ jobs:
           python -c "import json, sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$PUB/resumen.json"
 
           # Ultima barrera: columnas exactas y sin cuerpos.
-          python "private/$CORE_PATH/codigo/verificar_publico.py"             "$PUB/noticias_ultimos_7_dias_publico.csv"
+          python "private/$CORE_PATH/codigo/verificar_publico.py"             "$PUB/noticias_ultimos_7_dias_publico.csv" "$PUB/cambiario.json"
 
       - name: Guardar en el vault privado
         # Siempre, incluso si la corrida fallo: el registro de la ultima
@@ -153,22 +153,27 @@ jobs:
           cp "$PUB/noticias_ultimos_7_dias_publico.csv" .
           cp "$PUB/estado_ultima_corrida.png" .
           cp "$PUB/resumen.json" .
+          SALIDAS="noticias_ultimos_7_dias_publico.csv estado_ultima_corrida.png resumen.json"
+          if [ -s "$PUB/cambiario.json" ]; then
+            cp "$PUB/cambiario.json" .
+            SALIDAS="$SALIDAS cambiario.json"
+          fi
 
-          # Solo estos tres ficheros pueden entrar al repo publico.
-          if [ -n "$(git status --porcelain | grep -v -E 'noticias_ultimos_7_dias_publico.csv|estado_ultima_corrida.png|resumen.json' || true)" ]; then
+          # Solo estos ficheros pueden entrar al repo publico.
+          if [ -n "$(git status --porcelain | grep -v -E '^.. (noticias_ultimos_7_dias_publico\.csv|estado_ultima_corrida\.png|resumen\.json|cambiario\.json)$' || true)" ]; then
             echo "Hay cambios inesperados fuera de las salidas autorizadas." >&2
             git status --porcelain >&2
             exit 1
           fi
 
-          if [ -z "$(git status --porcelain noticias_ultimos_7_dias_publico.csv estado_ultima_corrida.png resumen.json)" ]; then
+          if [ -z "$(git status --porcelain $SALIDAS)" ]; then
             echo "Sin cambios publicos."
             exit 0
           fi
 
           git config user.name "Daniel Bohoz Oros Trujillo"
           git config user.email "283808960+BohozX@users.noreply.github.com"
-          git add noticias_ultimos_7_dias_publico.csv estado_ultima_corrida.png resumen.json
+          git add $SALIDAS
           git commit -m "Update news snapshot $(TZ=America/La_Paz date '+%Y-%m-%d %H:%M') BOT"
           REMOTO="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           for intento in 1 2 3; do
